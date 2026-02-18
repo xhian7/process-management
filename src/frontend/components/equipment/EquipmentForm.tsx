@@ -1,14 +1,65 @@
 import { useState, useEffect } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
-import { ArrowLeft, Save, Plus, Edit, Trash2, Settings } from 'lucide-react';
-import { equipmentApi, type CreateEquipmentData, type UpdateEquipmentData } from '../../services/equipmentApi';
+import { ArrowLeft, Save, Plus, Edit, Trash2, Settings, ChevronDown, ChevronRight } from 'lucide-react';
+import { equipmentApi, type CreateEquipmentData, type UpdateEquipmentData, type Equipment, type InheritedParameterGroup } from '../../services/equipmentApi';
 import { equipmentParameterApi, type EquipmentParameter, type CreateParameterData, type UpdateParameterData } from '../../services/equipmentParameterApi';
 import { Button } from '../ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '../ui/card';
 import { Input } from '../ui/input';
 import { Label } from '../ui/label';
 import { Textarea } from '../ui/textarea';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '../ui/select';
 import { ParameterForm } from './ParameterForm';
+
+// Helper function to render value definition badges
+const renderValueDefinitionBadges = (valueDefinition: any, type: string) => {
+  if (!valueDefinition) return null;
+
+  if (valueDefinition.type === 'range') {
+    return (
+      <div className="flex items-center gap-1.5 flex-wrap">
+        {valueDefinition.min !== undefined && (
+          <span className="text-xs px-1.5 py-0.5 bg-blue-500/10 text-blue-700 dark:text-blue-400 rounded border border-blue-500/20">
+            min: {valueDefinition.min}
+          </span>
+        )}
+        {valueDefinition.max !== undefined && (
+          <span className="text-xs px-1.5 py-0.5 bg-blue-500/10 text-blue-700 dark:text-blue-400 rounded border border-blue-500/20">
+            max: {valueDefinition.max}
+          </span>
+        )}
+        {valueDefinition.default !== undefined && (
+          <span className="text-xs px-1.5 py-0.5 bg-green-500/10 text-green-700 dark:text-green-400 rounded border border-green-500/20">
+            default: {valueDefinition.default}
+          </span>
+        )}
+      </div>
+    );
+  } else if (valueDefinition.type === 'select') {
+    const optionsCount = Array.isArray(valueDefinition.options) ? valueDefinition.options.length : 0;
+    return (
+      <div className="flex items-center gap-1.5">
+        <span className="text-xs px-1.5 py-0.5 bg-purple-500/10 text-purple-700 dark:text-purple-400 rounded border border-purple-500/20">
+          {optionsCount} option{optionsCount !== 1 ? 's' : ''}
+        </span>
+      </div>
+    );
+  } else if (valueDefinition.type === 'static' && valueDefinition.default !== undefined) {
+    const displayValue = typeof valueDefinition.default === 'boolean' 
+      ? (valueDefinition.default ? 'true' : 'false')
+      : String(valueDefinition.default);
+    
+    return (
+      <div className="flex items-center gap-1.5">
+        <span className="text-xs px-1.5 py-0.5 bg-green-500/10 text-green-700 dark:text-green-400 rounded border border-green-500/20">
+          default: {displayValue}
+        </span>
+      </div>
+    );
+  }
+
+  return null;
+};
 
 // Local parameter type for parameters that haven't been saved yet
 type LocalParameter = Omit<CreateParameterData, 'equipmentId'> & { 
@@ -16,6 +67,9 @@ type LocalParameter = Omit<CreateParameterData, 'equipmentId'> & {
   id?: number;
   _deleted?: boolean; // Mark for deletion
   _modified?: boolean; // Mark as modified
+  _inherited?: boolean; // Mark as inherited from parent class (read-only)
+  _inheritedFrom?: string; // ID of the class this parameter was inherited from
+  _inheritedFromName?: string; // Name of the class this parameter was inherited from
 };
 
 export function EquipmentForm() {
@@ -27,9 +81,13 @@ export function EquipmentForm() {
     id: '',
     name: '',
     description: '',
+    class: '',
     isClass: false,
   });
 
+  const [availableClasses, setAvailableClasses] = useState<Equipment[]>([]);
+  const [inheritedParameterGroups, setInheritedParameterGroups] = useState<InheritedParameterGroup[]>([]);
+  const [collapsedGroups, setCollapsedGroups] = useState<Set<string>>(new Set());
   const [originalParameters, setOriginalParameters] = useState<EquipmentParameter[]>([]);
   const [parameters, setParameters] = useState<LocalParameter[]>([]);
   const [showParameterForm, setShowParameterForm] = useState(false);
@@ -37,7 +95,26 @@ export function EquipmentForm() {
 
   const [loading, setLoading] = useState(false);
   const [loadingData, setLoadingData] = useState(isEditing);
+  const [loadingClasses, setLoadingClasses] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
+  // Flatten inherited parameters for compatibility
+  const inheritedParameters: LocalParameter[] = inheritedParameterGroups.flatMap(group =>
+    group.parameters.map(p => ({
+      id: p.id,
+      name: p.name,
+      description: p.description,
+      type: p.type,
+      valueDefinition: p.valueDefinition,
+      uom: p.uom,
+      _inherited: true,
+      _inheritedFrom: group.classId,
+      _inheritedFromName: group.className,
+    }))
+  );
+
+  // Combine inherited and own parameters for display
+  const allParameters = [...inheritedParameters, ...parameters.filter(p => !p._deleted)];
 
   // Filter out deleted parameters for display
   const visibleParameters = parameters.filter(p => !p._deleted);
@@ -66,10 +143,57 @@ export function EquipmentForm() {
   };
 
   useEffect(() => {
+    loadAvailableClasses();
     if (isEditing && id) {
       loadEquipment(id);
     }
   }, [id, isEditing]);
+
+  // Load inherited parameters when class changes
+  useEffect(() => {
+    if (formData.class) {
+      loadInheritedParameters(formData.class);
+    } else {
+      setInheritedParameterGroups([]);
+    }
+  }, [formData.class]);
+
+  const loadAvailableClasses = async () => {
+    try {
+      setLoadingClasses(true);
+      const allEquipment = await equipmentApi.getAll(false, false);
+      // Filter to only show equipment marked as classes
+      const classes = allEquipment.filter(eq => eq.isClass);
+      setAvailableClasses(classes);
+    } catch (err) {
+      console.error('Failed to load classes:', err);
+    } finally {
+      setLoadingClasses(false);
+    }
+  };
+
+  const loadInheritedParameters = async (classId: string) => {
+    try {
+      // Use the endpoint that gets all parameters from a class and its ancestors
+      const groups = await equipmentApi.getClassParameters(classId);
+      setInheritedParameterGroups(groups);
+    } catch (err) {
+      console.error('Failed to load inherited parameters:', err);
+      setInheritedParameterGroups([]);
+    }
+  };
+
+  const toggleGroupCollapse = (classId: string) => {
+    setCollapsedGroups(prev => {
+      const newSet = new Set(prev);
+      if (newSet.has(classId)) {
+        newSet.delete(classId);
+      } else {
+        newSet.add(classId);
+      }
+      return newSet;
+    });
+  };
 
   const loadEquipment = async (equipmentId: string) => {
     try {
@@ -79,6 +203,7 @@ export function EquipmentForm() {
         id: data.id,
         name: data.name,
         description: data.description || '',
+        class: data.class || '',
         isClass: data.isClass,
       });
       // Load parameters for editing mode
@@ -130,6 +255,7 @@ export function EquipmentForm() {
         const updateData: UpdateEquipmentData = {
           name: formData.name,
           description: formData.description || undefined,
+          class: formData.class || undefined,
           isClass: formData.isClass,
         };
         await equipmentApi.update(id, updateData);
@@ -172,6 +298,7 @@ export function EquipmentForm() {
           id: formData.id,
           name: formData.name,
           description: formData.description || undefined,
+          class: formData.class || undefined,
           isClass: formData.isClass,
         };
         await equipmentApi.create(createData);
@@ -397,6 +524,34 @@ export function EquipmentForm() {
                 />
               </div>
 
+              {/* Parent Class Selector - Available for both instances and classes */}
+              <div className="space-y-2">
+                <Label htmlFor="class">Parent Equipment Class (Optional)</Label>
+                <Select
+                  value={formData.class || undefined}
+                  onValueChange={(value) => setFormData(prev => ({ ...prev, class: value }))}
+                  disabled={loading || loadingClasses}
+                >
+                  <SelectTrigger id="class">
+                    <SelectValue placeholder="Select a parent class to inherit parameters" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {availableClasses
+                      .filter(cls => cls.id !== formData.id) // Prevent self-reference
+                      .map((cls) => (
+                        <SelectItem key={cls.id} value={cls.id}>
+                          {cls.name} ({cls.id})
+                        </SelectItem>
+                      ))}
+                  </SelectContent>
+                </Select>
+                <p className="text-xs text-muted-foreground">
+                  {formData.isClass 
+                    ? "Classes can inherit from other classes to create multi-level hierarchies. All parameters are inherited through generations."
+                    : "Select a parent class to inherit its parameters. The instance will inherit parameters from the full class hierarchy."}
+                </p>
+              </div>
+
               {/* Is Class Checkbox */}
               <div className="flex items-start space-x-3 rounded-md border border-border p-4">
                 <input
@@ -461,82 +616,168 @@ export function EquipmentForm() {
                   inline
                 />
               </div>
-            ) : visibleParameters.length === 0 ? (
+            ) : (inheritedParameterGroups.length === 0 && visibleParameters.length === 0) ? (
               <div className="text-center py-8">
                 <Settings className="w-12 h-12 text-muted-foreground mx-auto mb-3" />
                 <p className="text-muted-foreground">No parameters defined yet</p>
               </div>
             ) : (
-              <div className="space-y-4">
-                {visibleParameters.map((param) => {
-                  const paramId = param.id || param.tempId!;
-                  const isNew = !param.id; // No ID means it's new
-                  const isModified = param._modified && param.id; // Has ID and is modified
+              <div className="space-y-6">
+                {/* Inherited Parameters - Grouped by Class (Oldest to Newest) */}
+                {inheritedParameterGroups.map((group, groupIndex) => {
+                  const isCollapsed = collapsedGroups.has(group.classId);
                   
                   return (
-                    <div
-                      key={paramId}
-                      className="flex items-start justify-between border border-border rounded-lg p-4"
-                    >
-                      <div className="flex-1">
-                        <div className="flex items-center gap-2 mb-1">
-                          <p className="font-semibold text-foreground">{param.name}</p>
-                          <span className="text-xs px-2 py-0.5 bg-muted text-muted-foreground rounded">
-                            {param.type}
-                          </span>
-                          {isNew && (
-                            <span className="text-xs px-2 py-0.5 bg-green-100 dark:bg-green-900 text-green-900 dark:text-green-100 rounded">
-                              New
-                            </span>
-                          )}
-                          {isModified && (
-                            <span className="text-xs px-2 py-0.5 bg-blue-100 dark:bg-blue-900 text-blue-900 dark:text-blue-100 rounded">
-                              Modified
-                            </span>
-                          )}
-                        </div>
-                        {param.description && (
-                          <p className="text-sm text-muted-foreground mt-1 mb-2">
-                            {param.description}
-                          </p>
+                    <div key={group.classId} className="space-y-2">
+                      {/* Group Header */}
+                      <button
+                        onClick={() => toggleGroupCollapse(group.classId)}
+                        className="w-full flex items-center gap-2 px-3 py-2 rounded-md bg-purple-50/50 dark:bg-purple-900/20 border border-purple-200 dark:border-purple-800 hover:bg-purple-50 dark:hover:bg-purple-900/30 transition-colors"
+                      >
+                        {isCollapsed ? (
+                          <ChevronRight className="w-4 h-4 text-purple-600 dark:text-purple-400" />
+                        ) : (
+                          <ChevronDown className="w-4 h-4 text-purple-600 dark:text-purple-400" />
                         )}
-                        <div className="flex gap-4 text-xs text-muted-foreground">
-                          <span className="flex items-center gap-1">
-                            <strong>UOM:</strong> {param.uom}
+                        <span className="text-sm font-medium text-purple-900 dark:text-purple-100">
+                          {group.className}
+                        </span>
+                        <span className="text-xs text-purple-700 dark:text-purple-300">
+                          ({group.parameters.length} parameter{group.parameters.length !== 1 ? 's' : ''})
+                        </span>
+                        {groupIndex === 0 && (
+                          <span className="ml-auto text-xs text-purple-600 dark:text-purple-400 italic">
+                            oldest ancestor
                           </span>
-                          {param.valueDefinition && (
-                            <span className="flex items-center gap-1">
-                              <strong>Definition:</strong>{' '}
-                              {JSON.stringify(param.valueDefinition)}
-                            </span>
-                          )}
+                        )}
+                        {groupIndex === inheritedParameterGroups.length - 1 && (
+                          <span className="ml-auto text-xs text-purple-600 dark:text-purple-400 italic">
+                            direct parent
+                          </span>
+                        )}
+                      </button>
+
+                      {/* Group Parameters */}
+                      {!isCollapsed && (
+                        <div className="ml-6 space-y-3 border-l-2 border-purple-200 dark:border-purple-800 pl-4">
+                          {group.parameters.map((param) => (
+                            <div
+                              key={param.id}
+                              className="border border-purple-200 dark:border-purple-800 bg-purple-50/30 dark:bg-purple-900/10 rounded-lg p-4"
+                            >
+                              <div className="flex items-start justify-between">
+                                <div className="flex-1">
+                                  <div className="flex items-center gap-2 mb-1">
+                                    <p className="font-semibold text-foreground">{param.name}</p>
+                                    <span className="text-xs px-2 py-0.5 bg-muted text-muted-foreground rounded">
+                                      {param.type}
+                                    </span>
+                                  </div>
+                                  {param.description && (
+                                    <p className="text-sm text-muted-foreground mt-1 mb-2">
+                                      {param.description}
+                                    </p>
+                                  )}
+                                  <div className="flex gap-4 text-xs text-muted-foreground items-center">
+                                    <span className="flex items-center gap-1">
+                                      <strong>UOM:</strong> {param.uom}
+                                    </span>
+                                    {param.valueDefinition && renderValueDefinitionBadges(param.valueDefinition, param.type)}
+                                  </div>
+                                </div>
+                                <div className="ml-4 text-xs text-purple-600 dark:text-purple-400 italic">
+                                  Read-only
+                                </div>
+                              </div>
+                            </div>
+                          ))}
                         </div>
-                      </div>
-                      <div className="flex gap-2 ml-4">
-                        <Button
-                          variant="outline"
-                          size="sm"
-                          onClick={() => handleEditParameter(param)}
-                          disabled={showParameterForm || loading}
-                          className="gap-1"
-                        >
-                          <Edit className="w-3 h-3" />
-                          Edit
-                        </Button>
-                        <Button
-                          variant="outline"
-                          size="sm"
-                          onClick={() => handleDeleteParameter(paramId)}
-                          disabled={showParameterForm || loading}
-                          className="gap-1 text-destructive hover:bg-destructive hover:text-destructive-foreground"
-                        >
-                          <Trash2 className="w-3 h-3" />
-                          Delete
-                        </Button>
-                      </div>
+                      )}
                     </div>
                   );
                 })}
+
+                {/* Own Parameters */}
+                {visibleParameters.length > 0 && (
+                  <div className="space-y-2">
+                    <div className="px-3 py-2 rounded-md bg-blue-50/50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800">
+                      <span className="text-sm font-medium text-blue-900 dark:text-blue-100">
+                        Own Parameters
+                      </span>
+                      <span className="text-xs text-blue-700 dark:text-blue-300 ml-2">
+                        ({visibleParameters.length} parameter{visibleParameters.length !== 1 ? 's' : ''})
+                      </span>
+                    </div>
+                    <div className="ml-6 space-y-3 border-l-2 border-blue-200 dark:border-blue-800 pl-4">
+                      {visibleParameters.map((param) => {
+                        const paramId = param.id || param.tempId!;
+                        const isNew = !param.id;
+                        const isModified = param._modified && param.id;
+                        
+                        return (
+                          <div
+                            key={paramId}
+                            className="border border-border rounded-lg p-4"
+                          >
+                            <div className="flex items-start justify-between">
+                              <div className="flex-1">
+                                <div className="flex items-center gap-2 mb-1">
+                                  <p className="font-semibold text-foreground">{param.name}</p>
+                                  <span className="text-xs px-2 py-0.5 bg-muted text-muted-foreground rounded">
+                                    {param.type}
+                                  </span>
+                                  {isNew && (
+                                    <span className="text-xs px-2 py-0.5 bg-green-100 dark:bg-green-900 text-green-900 dark:text-green-100 rounded">
+                                      New
+                                    </span>
+                                  )}
+                                  {isModified && (
+                                    <span className="text-xs px-2 py-0.5 bg-blue-100 dark:bg-blue-900 text-blue-900 dark:text-blue-100 rounded">
+                                      Modified
+                                    </span>
+                                  )}
+                                </div>
+                                {param.description && (
+                                  <p className="text-sm text-muted-foreground mt-1 mb-2">
+                                    {param.description}
+                                  </p>
+                                )}
+                                <div className="flex gap-4 text-xs text-muted-foreground items-center">
+                                  <span className="flex items-center gap-1">
+                                    <strong>UOM:</strong> {param.uom}
+                                  </span>
+                                  {param.valueDefinition && renderValueDefinitionBadges(param.valueDefinition, param.type)}
+                                </div>
+                              </div>
+                              <div className="flex gap-2 ml-4">
+                                <Button
+                                  variant="outline"
+                                  size="sm"
+                                  onClick={() => handleEditParameter(param)}
+                                  disabled={showParameterForm || loading}
+                                  className="gap-1"
+                                >
+                                  <Edit className="w-3 h-3" />
+                                  Edit
+                                </Button>
+                                <Button
+                                  variant="outline"
+                                  size="sm"
+                                  onClick={() => handleDeleteParameter(paramId)}
+                                  disabled={showParameterForm || loading}
+                                  className="gap-1 text-destructive hover:bg-destructive hover:text-destructive-foreground"
+                                >
+                                  <Trash2 className="w-3 h-3" />
+                                  Delete
+                                </Button>
+                              </div>
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </div>
+                )}
               </div>
             )}
           </CardContent>

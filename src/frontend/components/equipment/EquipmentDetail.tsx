@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
-import { ArrowLeft, Edit, Trash2, Package, Settings } from 'lucide-react';
-import { equipmentApi, type Equipment } from '../../services/equipmentApi';
+import { ArrowLeft, Edit, Trash2, Package, Settings, ChevronDown, ChevronRight } from 'lucide-react';
+import { equipmentApi, type Equipment, type InheritedParameterGroup } from '../../services/equipmentApi';
 import { equipmentParameterApi, type EquipmentParameter } from '../../services/equipmentParameterApi';
 import { Button } from '../ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '../ui/card';
@@ -61,9 +61,16 @@ export function EquipmentDetail() {
   const { id } = useParams<{ id: string }>();
   const [equipment, setEquipment] = useState<Equipment | null>(null);
   const [parameters, setParameters] = useState<EquipmentParameter[]>([]);
+  const [inheritedParameterGroups, setInheritedParameterGroups] = useState<InheritedParameterGroup[]>([]);
+  const [collapsedGroups, setCollapsedGroups] = useState<Set<string>>(new Set());
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [deleting, setDeleting] = useState(false);
+
+  // Flatten inherited parameters for compatibility
+  const inheritedParameters: EquipmentParameter[] = inheritedParameterGroups.flatMap(group =>
+    group.parameters
+  );
 
   useEffect(() => {
     if (id) {
@@ -87,11 +94,28 @@ export function EquipmentDetail() {
 
   const loadParameters = async (equipmentId: string) => {
     try {
-      const data = await equipmentParameterApi.getAll(equipmentId);
-      setParameters(data);
+      // Load own parameters
+      const ownParams = await equipmentParameterApi.getAll(equipmentId);
+      setParameters(ownParams);
+      
+      // Load inherited parameters grouped by class
+      const groups = await equipmentApi.getInheritedParameters(equipmentId);
+      setInheritedParameterGroups(groups);
     } catch (err) {
       console.error('Failed to load parameters:', err);
     }
+  };
+
+  const toggleGroupCollapse = (classId: string) => {
+    setCollapsedGroups(prev => {
+      const newSet = new Set(prev);
+      if (newSet.has(classId)) {
+        newSet.delete(classId);
+      } else {
+        newSet.add(classId);
+      }
+      return newSet;
+    });
   };
 
   const handleDelete = async () => {
@@ -216,15 +240,29 @@ export function EquipmentDetail() {
                   {equipment.isClass ? 'Equipment Class' : 'Equipment Instance'}
                 </p>
               </div>
-              {equipment.parentClass && (
+              {equipment.ancestorChain && equipment.ancestorChain.length > 0 && (
                 <div>
-                  <Label>Parent Class</Label>
-                  <button
-                    onClick={() => navigate(`/app/equipments/${equipment.parentClass!.id}`)}
-                    className="text-sm text-accent hover:underline mt-1 block"
-                  >
-                    {equipment.parentClass.name}
-                  </button>
+                  <Label>Inheritance Chain</Label>
+                  <div className="mt-1 flex items-center gap-2 flex-wrap">
+                    {equipment.ancestorChain.map((ancestor, index) => (
+                      <div key={ancestor.id} className="flex items-center gap-2">
+                        <button
+                          onClick={() => navigate(`/app/equipments/${ancestor.id}`)}
+                          className="text-sm text-accent hover:underline"
+                        >
+                          {ancestor.name}
+                        </button>
+                        {index < equipment.ancestorChain!.length - 1 && (
+                          <span className="text-muted-foreground">←</span>
+                        )}
+                      </div>
+                    ))}
+                    <span className="text-muted-foreground">←</span>
+                    <span className="text-sm font-medium text-foreground">{equipment.name}</span>
+                  </div>
+                  <p className="text-xs text-muted-foreground mt-1">
+                    Full inheritance hierarchy showing all parent classes
+                  </p>
                 </div>
               )}
             </CardContent>
@@ -242,37 +280,134 @@ export function EquipmentDetail() {
               </CardDescription>
             </CardHeader>
             <CardContent>
-              {parameters.length === 0 ? (
+              {parameters.length === 0 && inheritedParameters.length === 0 ? (
                 <div className="text-center py-8">
                   <Settings className="w-12 h-12 text-muted-foreground mx-auto mb-3" />
                   <p className="text-muted-foreground">No parameters defined yet</p>
                 </div>
               ) : (
-                <div className="space-y-4">
-                  {parameters.map((param) => (
-                    <div
-                      key={param.id}
-                      className="border border-border rounded-lg p-4"
-                    >
-                      <div className="flex items-center gap-2 mb-1">
-                        <p className="font-semibold text-foreground">{param.name}</p>
-                        <span className="text-xs px-2 py-0.5 bg-muted text-muted-foreground rounded">
-                          {param.type}
-                        </span>
+                <div className="space-y-6">
+                  {/* Inherited Parameters Section - Hierarchical by Class */}
+                  {inheritedParameterGroups.length > 0 && (
+                    <div>
+                      <div className="flex items-center gap-2 mb-3">
+                        <h3 className="text-sm font-semibold text-muted-foreground">
+                          Inherited Parameters ({inheritedParameters.length})
+                        </h3>
+                        <div className="flex-1 border-t border-border" />
                       </div>
-                      {param.description && (
-                        <p className="text-sm text-muted-foreground mt-1 mb-2">
-                          {param.description}
-                        </p>
-                      )}
-                      <div className="flex gap-4 text-xs text-muted-foreground items-center">
-                        <span className="flex items-center gap-1">
-                          <strong>UOM:</strong> {param.uom}
-                        </span>
-                        {param.valueDefinition && renderValueDefinitionBadges(param.valueDefinition, param.type)}
+                      <div className="space-y-2">
+                        {inheritedParameterGroups.map((group, groupIndex) => {
+                          const isCollapsed = collapsedGroups.has(group.classId);
+                          const isOldestAncestor = groupIndex === 0;
+                          const isDirectParent = groupIndex === inheritedParameterGroups.length - 1;
+                          
+                          return (
+                            <div key={group.classId} className="border border-purple-200 dark:border-purple-800 rounded-lg overflow-hidden">
+                              {/* Group Header - Collapsible */}
+                              <button
+                                onClick={() => toggleGroupCollapse(group.classId)}
+                                className="w-full flex items-center gap-2 px-4 py-2 bg-purple-50 dark:bg-purple-950/30 hover:bg-purple-100 dark:hover:bg-purple-900/40 transition-colors"
+                              >
+                                {isCollapsed ? (
+                                  <ChevronRight className="w-4 h-4 text-purple-600 dark:text-purple-400" />
+                                ) : (
+                                  <ChevronDown className="w-4 h-4 text-purple-600 dark:text-purple-400" />
+                                )}
+                                <span className="font-medium text-purple-900 dark:text-purple-100">
+                                  {group.className}
+                                </span>
+                                <span className="text-xs px-2 py-0.5 bg-purple-200 dark:bg-purple-900 text-purple-900 dark:text-purple-100 rounded">
+                                  {group.parameters.length} parameter{group.parameters.length !== 1 ? 's' : ''}
+                                </span>
+                                {isOldestAncestor && (
+                                  <span className="text-xs px-2 py-0.5 bg-purple-300 dark:bg-purple-800 text-purple-900 dark:text-purple-100 rounded font-medium">
+                                    oldest ancestor
+                                  </span>
+                                )}
+                                {isDirectParent && (
+                                  <span className="text-xs px-2 py-0.5 bg-purple-300 dark:bg-purple-800 text-purple-900 dark:text-purple-100 rounded font-medium">
+                                    direct parent
+                                  </span>
+                                )}
+                              </button>
+
+                              {/* Group Parameters - Collapsible Content */}
+                              {!isCollapsed && (
+                                <div className="border-l-4 border-purple-300 dark:border-purple-700 pl-4 pr-4 py-3 space-y-3 bg-purple-50/20 dark:bg-purple-900/5">
+                                  {group.parameters.map((param) => (
+                                    <div
+                                      key={param.id}
+                                      className="border border-purple-200 dark:border-purple-800 bg-background rounded-lg p-4"
+                                    >
+                                      <div className="flex items-center gap-2 mb-1">
+                                        <p className="font-semibold text-foreground">{param.name}</p>
+                                        <span className="text-xs px-2 py-0.5 bg-muted text-muted-foreground rounded">
+                                          {param.type}
+                                        </span>
+                                        <span className="text-xs text-purple-600 dark:text-purple-400 font-medium">
+                                          (read-only)
+                                        </span>
+                                      </div>
+                                      {param.description && (
+                                        <p className="text-sm text-muted-foreground mt-1 mb-2">
+                                          {param.description}
+                                        </p>
+                                      )}
+                                      <div className="flex gap-4 text-xs text-muted-foreground items-center">
+                                        <span className="flex items-center gap-1">
+                                          <strong>UOM:</strong> {param.uom}
+                                        </span>
+                                        {param.valueDefinition && renderValueDefinitionBadges(param.valueDefinition, param.type)}
+                                      </div>
+                                    </div>
+                                  ))}
+                                </div>
+                              )}
+                            </div>
+                          );
+                        })}
                       </div>
                     </div>
-                  ))}
+                  )}
+
+                  {/* Own Parameters Section */}
+                  {parameters.length > 0 && (
+                    <div>
+                      <div className="flex items-center gap-2 mb-3">
+                        <h3 className="text-sm font-semibold text-blue-700 dark:text-blue-400">
+                          Own Parameters ({parameters.length})
+                        </h3>
+                        <div className="flex-1 border-t border-blue-200 dark:border-blue-800" />
+                      </div>
+                      <div className="space-y-3">
+                        {parameters.map((param) => (
+                          <div
+                            key={param.id}
+                            className="border border-blue-200 dark:border-blue-800 bg-blue-50/20 dark:bg-blue-900/5 rounded-lg p-4"
+                          >
+                            <div className="flex items-center gap-2 mb-1">
+                              <p className="font-semibold text-foreground">{param.name}</p>
+                              <span className="text-xs px-2 py-0.5 bg-muted text-muted-foreground rounded">
+                                {param.type}
+                              </span>
+                            </div>
+                            {param.description && (
+                              <p className="text-sm text-muted-foreground mt-1 mb-2">
+                                {param.description}
+                              </p>
+                            )}
+                            <div className="flex gap-4 text-xs text-muted-foreground items-center">
+                              <span className="flex items-center gap-1">
+                                <strong>UOM:</strong> {param.uom}
+                              </span>
+                              {param.valueDefinition && renderValueDefinitionBadges(param.valueDefinition, param.type)}
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  )}
                 </div>
               )}
             </CardContent>

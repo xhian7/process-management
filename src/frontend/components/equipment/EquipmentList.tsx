@@ -5,6 +5,7 @@ import { equipmentApi, type Equipment } from '../../services/equipmentApi';
 import { Button } from '../ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '../ui/card';
 import { Input } from '../ui/input';
+import { Tabs, TabsList, TabsTrigger, TabsContent } from '../ui/tabs';
 
 export function EquipmentList() {
   const navigate = useNavigate();
@@ -13,6 +14,7 @@ export function EquipmentList() {
   const [error, setError] = useState<string | null>(null);
   const [searchTerm, setSearchTerm] = useState('');
   const [deletingId, setDeletingId] = useState<string | null>(null);
+  const [activeTab, setActiveTab] = useState('instances');
 
   useEffect(() => {
     loadEquipment();
@@ -52,6 +54,108 @@ export function EquipmentList() {
     item.id.toLowerCase().includes(searchTerm.toLowerCase()) ||
     item.description?.toLowerCase().includes(searchTerm.toLowerCase())
   );
+
+  // Separate classes and instances
+  const classes = filteredEquipment.filter((item) => item.isClass);
+  const instances = filteredEquipment.filter((item) => !item.isClass);
+
+  const renderEquipmentList = (items: Equipment[], emptyMessage: string) => {
+    if (items.length === 0) {
+      return (
+        <Card>
+          <CardContent className="flex flex-col items-center justify-center py-12">
+            <Package className="w-12 h-12 text-muted-foreground mb-4" />
+            <p className="text-muted-foreground text-center">
+              {searchTerm ? 'No equipment found matching your search' : emptyMessage}
+            </p>
+            {!searchTerm && (
+              <Button
+                onClick={() => navigate('/app/equipments/new')}
+                className="mt-4 gap-2"
+              >
+                <Plus className="w-4 h-4" />
+                Add Equipment
+              </Button>
+            )}
+          </CardContent>
+        </Card>
+      );
+    }
+
+    return (
+      <div className="space-y-4">
+        {items.map((item) => (
+          <Card key={item.id} className="hover:shadow-md transition-shadow">
+            <CardContent className="p-6">
+              <div className="flex items-start justify-between">
+                <div className="flex-1">
+                  <div className="flex items-center gap-3 mb-2">
+                    <h3 className="text-lg font-semibold text-foreground">
+                      {item.name}
+                    </h3>
+                    <span className="text-xs font-mono px-2 py-1 bg-muted text-muted-foreground rounded">
+                      {item.id}
+                    </span>
+                    {item.isClass && (
+                      <span className="text-xs px-2 py-1 bg-accent text-accent-foreground rounded font-medium">
+                        Class
+                      </span>
+                    )}
+                  </div>
+                  {item.description && (
+                    <p className="text-muted-foreground text-sm mb-3">
+                      {item.description}
+                    </p>
+                  )}
+                  <div className="flex gap-4 text-xs text-muted-foreground">
+                    {item.equipmentParameters && item.equipmentParameters.length > 0 && (
+                      <span>{item.equipmentParameters.length} parameter(s)</span>
+                    )}
+                    {item.childEquipment && item.childEquipment.length > 0 && (
+                      <span>{item.childEquipment.length} child equipment</span>
+                    )}
+                    {item.parentClass && (
+                      <span>Class: {item.parentClass.name}</span>
+                    )}
+                  </div>
+                </div>
+                <div className="flex gap-2">
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => navigate(`/app/equipments/${item.id}`)}
+                    className="gap-2"
+                  >
+                    <Eye className="w-4 h-4" />
+                    View
+                  </Button>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => navigate(`/app/equipments/${item.id}/edit`)}
+                    className="gap-2"
+                  >
+                    <Edit className="w-4 h-4" />
+                    Edit
+                  </Button>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => handleDelete(item.id)}
+                    disabled={deletingId === item.id}
+                    className="gap-2 text-destructive hover:bg-destructive hover:text-destructive-foreground"
+                  >
+                    <Trash2 className="w-4 h-4" />
+                    Delete
+                  </Button>
+                </div>
+              </div>
+            </CardContent>
+          </Card>
+        ))}
+      </div>
+    );
+  };
 
   if (loading) {
     return (
@@ -111,97 +215,34 @@ export function EquipmentList() {
 
       {/* Content */}
       <div className="flex-1 overflow-auto p-8">
-        {filteredEquipment.length === 0 ? (
-          <Card>
-            <CardContent className="flex flex-col items-center justify-center py-12">
-              <Package className="w-12 h-12 text-muted-foreground mb-4" />
-              <p className="text-muted-foreground text-center">
-                {searchTerm ? 'No equipment found matching your search' : 'No equipment yet'}
-              </p>
-              {!searchTerm && (
-                <Button
-                  onClick={() => navigate('/app/equipments/new')}
-                  className="mt-4 gap-2"
-                >
-                  <Plus className="w-4 h-4" />
-                  Add Your First Equipment
-                </Button>
+        <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
+          <TabsList className="mb-6">
+            <TabsTrigger value="instances" className="gap-2">
+              Instances
+              {instances.length > 0 && (
+                <span className="text-xs px-1.5 py-0.5 bg-primary/10 text-primary rounded">
+                  {instances.length}
+                </span>
               )}
-            </CardContent>
-          </Card>
-        ) : (
-          <div className="space-y-4">
-            {filteredEquipment.map((item) => (
-              <Card key={item.id} className="hover:shadow-md transition-shadow">
-                <CardContent className="p-6">
-                  <div className="flex items-start justify-between">
-                    <div className="flex-1">
-                      <div className="flex items-center gap-3 mb-2">
-                        <h3 className="text-lg font-semibold text-foreground">
-                          {item.name}
-                        </h3>
-                        <span className="text-xs font-mono px-2 py-1 bg-muted text-muted-foreground rounded">
-                          {item.id}
-                        </span>
-                        {item.isClass && (
-                          <span className="text-xs px-2 py-1 bg-accent text-accent-foreground rounded font-medium">
-                            Class
-                          </span>
-                        )}
-                      </div>
-                      {item.description && (
-                        <p className="text-muted-foreground text-sm mb-3">
-                          {item.description}
-                        </p>
-                      )}
-                      <div className="flex gap-4 text-xs text-muted-foreground">
-                        {item.equipmentParameters && item.equipmentParameters.length > 0 && (
-                          <span>{item.equipmentParameters.length} parameter(s)</span>
-                        )}
-                        {item.childEquipment && item.childEquipment.length > 0 && (
-                          <span>{item.childEquipment.length} child equipment</span>
-                        )}
-                        {item.parentClass && (
-                          <span>Class: {item.parentClass.name}</span>
-                        )}
-                      </div>
-                    </div>
-                    <div className="flex gap-2">
-                      <Button
-                        variant="outline"
-                        size="sm"
-                        onClick={() => navigate(`/app/equipments/${item.id}`)}
-                        className="gap-2"
-                      >
-                        <Eye className="w-4 h-4" />
-                        View
-                      </Button>
-                      <Button
-                        variant="outline"
-                        size="sm"
-                        onClick={() => navigate(`/app/equipments/${item.id}/edit`)}
-                        className="gap-2"
-                      >
-                        <Edit className="w-4 h-4" />
-                        Edit
-                      </Button>
-                      <Button
-                        variant="outline"
-                        size="sm"
-                        onClick={() => handleDelete(item.id)}
-                        disabled={deletingId === item.id}
-                        className="gap-2 text-destructive hover:bg-destructive hover:text-destructive-foreground"
-                      >
-                        <Trash2 className="w-4 h-4" />
-                        Delete
-                      </Button>
-                    </div>
-                  </div>
-                </CardContent>
-              </Card>
-            ))}
-          </div>
-        )}
+            </TabsTrigger>
+            <TabsTrigger value="classes" className="gap-2">
+              Classes
+              {classes.length > 0 && (
+                <span className="text-xs px-1.5 py-0.5 bg-primary/10 text-primary rounded">
+                  {classes.length}
+                </span>
+              )}
+            </TabsTrigger>
+          </TabsList>
+
+          <TabsContent value="instances">
+            {renderEquipmentList(instances, 'No equipment instances yet')}
+          </TabsContent>
+
+          <TabsContent value="classes">
+            {renderEquipmentList(classes, 'No equipment classes yet')}
+          </TabsContent>
+        </Tabs>
       </div>
     </div>
   );

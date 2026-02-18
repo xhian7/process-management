@@ -9,6 +9,7 @@ export interface Equipment {
   equipmentParameters?: EquipmentParameter[];
   childEquipment?: Equipment[];
   parentClass?: Equipment | null;
+  ancestorChain?: Equipment[]; // Full chain of parent classes for inheritance tracing
 }
 
 export interface EquipmentParameter {
@@ -19,18 +20,28 @@ export interface EquipmentParameter {
   type: string;
   valueDefinition: any;
   uom: string;
+  _inheritedFrom?: string; // ID of the class this parameter was inherited from
+  _inheritedFromName?: string; // Name of the class this parameter was inherited from
+}
+
+export interface InheritedParameterGroup {
+  classId: string;
+  className: string;
+  parameters: EquipmentParameter[];
 }
 
 export interface CreateEquipmentData {
   id: string;
   name: string;
   description?: string;
+  class?: string;
   isClass?: boolean;
 }
 
 export interface UpdateEquipmentData {
   name: string;
   description?: string;
+  class?: string;
   isClass?: boolean;
 }
 
@@ -120,5 +131,29 @@ export const equipmentApi = {
     if (!result.success) {
       throw new Error(result.error || 'Failed to delete equipment');
     }
+  },
+
+  // Get all inherited parameters for an equipment (from full hierarchy)
+  async getInheritedParameters(id: string): Promise<InheritedParameterGroup[]> {
+    const response = await fetch(`${API_BASE}/equipment/${id}/inherited-parameters`);
+    const result: ApiResponse<InheritedParameterGroup[]> = await response.json();
+    
+    if (!result.success || !result.data) {
+      throw new Error(result.error || 'Failed to fetch inherited parameters');
+    }
+    
+    return result.data;
+  },
+
+  // Get all parameters from a class and its ancestors (for form preview when selecting a class)
+  async getClassParameters(classId: string): Promise<InheritedParameterGroup[]> {
+    const response = await fetch(`${API_BASE}/equipment/class/${classId}/all-parameters`);
+    const result: ApiResponse<InheritedParameterGroup[]> = await response.json();
+    
+    if (!result.success || !result.data) {
+      throw new Error(result.error || 'Failed to fetch class parameters');
+    }
+    
+    return result.data;
   },
 };
