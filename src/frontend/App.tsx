@@ -5,6 +5,8 @@ import { MainLayout } from "./components/MainLayout";
 import { EquipmentList } from "./components/equipment/EquipmentList";
 import { EquipmentForm } from "./components/equipment/EquipmentForm";
 import { EquipmentDetail } from "./components/equipment/EquipmentDetail";
+import { MaterialList } from "./components/materials/MaterialList";
+import { MaterialForm } from "./components/materials/MaterialForm";
 
 export function App() {
   return (
@@ -25,6 +27,13 @@ export function App() {
               <Route path="new" element={<EquipmentForm />} />
               <Route path=":id" element={<EquipmentDetail />} />
               <Route path=":id/edit" element={<EquipmentForm />} />
+            </Route>
+            
+            {/* Material routes */}
+            <Route path="materials">
+              <Route index element={<MaterialList />} />
+              <Route path="new" element={<MaterialForm />} />
+              <Route path=":id/edit" element={<MaterialForm />} />
             </Route>
           </Route>
         </Routes>

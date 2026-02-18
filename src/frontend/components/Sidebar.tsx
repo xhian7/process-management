@@ -1,5 +1,5 @@
 import { Link, useLocation } from 'react-router-dom';
-import { Package } from 'lucide-react';
+import { Package, Box } from 'lucide-react';
 import { cn } from '../lib/utils';
 
 interface SidebarProps {
@@ -17,6 +17,11 @@ const navItems: NavItem[] = [
     name: 'Equipment',
     path: '/app/equipments',
     icon: <Package className="w-5 h-5" />,
+  },
+  {
+    name: 'Materials',
+    path: '/app/materials',
+    icon: <Box className="w-5 h-5" />,
   },
 ];
 
