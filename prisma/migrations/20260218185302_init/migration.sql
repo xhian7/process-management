@@ -45,7 +45,7 @@ CREATE TABLE "Equipment" (
     "id" VARCHAR(50) NOT NULL,
     "name" VARCHAR(255) NOT NULL,
     "description" TEXT,
-    "class" VARCHAR(50) NOT NULL,
+    "class" VARCHAR(50),
     "isClass" BOOLEAN NOT NULL DEFAULT false,
 
     CONSTRAINT "Equipment_pkey" PRIMARY KEY ("id")
@@ -174,7 +174,7 @@ ALTER TABLE "PhaseMaterial" ADD CONSTRAINT "PhaseMaterial_phaseId_fkey" FOREIGN 
 ALTER TABLE "PhaseMaterial" ADD CONSTRAINT "PhaseMaterial_materialId_fkey" FOREIGN KEY ("materialId") REFERENCES "Material"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
 
 -- AddForeignKey
-ALTER TABLE "Equipment" ADD CONSTRAINT "Equipment_class_fkey" FOREIGN KEY ("class") REFERENCES "Equipment"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
+ALTER TABLE "Equipment" ADD CONSTRAINT "Equipment_class_fkey" FOREIGN KEY ("class") REFERENCES "Equipment"("id") ON DELETE SET NULL ON UPDATE CASCADE;
 
 -- AddForeignKey
 ALTER TABLE "EquipmentParameter" ADD CONSTRAINT "EquipmentParameter_equipmentId_fkey" FOREIGN KEY ("equipmentId") REFERENCES "Equipment"("id") ON DELETE RESTRICT ON UPDATE CASCADE;

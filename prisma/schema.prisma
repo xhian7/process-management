@@ -49,7 +49,7 @@ model Equipment {
   id                  String               @id @db.VarChar(50)
   name                String               @db.VarChar(255)
   description         String?              @db.Text
-  class               String               @db.VarChar(50)
+  class               String?              @db.VarChar(50)
   isClass             Boolean              @default(false)
   parentClass         Equipment?           @relation("ParentClass", fields: [class], references: [id])
   childEquipment      Equipment[]          @relation("ParentClass")
