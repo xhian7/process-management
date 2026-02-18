@@ -1,0 +1,191 @@
+generator client {
+  provider = "prisma-client"
+  output   = "../generated/prisma"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+model Material {
+  id                      String                   @id @db.VarChar(50)
+  name                    String                   @db.VarChar(255)
+  description             String?                  @db.Text
+  uom                     String                   @db.VarChar(20)
+  phaseMaterials          PhaseMaterial[]
+  batchExecutionMaterials BatchExecutionMaterial[]
+}
+
+model Phase {
+  id                       Int                       @id @default(autoincrement())
+  name                     String                    @db.VarChar(255)
+  targetExecutionTime      BigInt /* Time in seconds */
+  instructions             String?                   @db.Text
+  isBuildingBlock          Boolean                   @default(false)
+  phaseMaterials           PhaseMaterial[]
+  phaseEquipments          PhaseEquipment[]
+  phaseEquipmentParameters PhaseEquipmentParameter[]
+  groupPhases              GroupPhase[]
+  batchPhaseExecutions     BatchPhaseExecution[]
+}
+
+enum PhaseMaterialType {
+  INPUT
+  OUTPUT
+}
+
+model PhaseMaterial {
+  id               Int               @id @default(autoincrement())
+  phaseId          Int
+  materialId       String            @db.VarChar(50)
+  quantityRelation Decimal           @db.Decimal(10, 2)
+  uom              String            @db.VarChar(20)
+  type             PhaseMaterialType
+  phase            Phase             @relation(fields: [phaseId], references: [id])
+  material         Material          @relation(fields: [materialId], references: [id])
+}
+
+model Equipment {
+  id                  String               @id @db.VarChar(50)
+  name                String               @db.VarChar(255)
+  description         String?              @db.Text
+  class               String               @db.VarChar(50)
+  isClass             Boolean              @default(false)
+  parentClass         Equipment?           @relation("ParentClass", fields: [class], references: [id])
+  childEquipment      Equipment[]          @relation("ParentClass")
+  equipmentParameters EquipmentParameter[]
+  phaseEquipments     PhaseEquipment[]
+}
+
+model EquipmentParameter {
+  id                       Int                       @id @default(autoincrement())
+  equipmentId              String                    @db.VarChar(50)
+  name                     String                    @db.VarChar(255)
+  description              String?                   @db.Text
+  type                     String                    @db.VarChar(50)
+  valueDefinition          Json?                     @db.Json
+  equipment                Equipment                 @relation(fields: [equipmentId], references: [id])
+  phaseEquipmentParameters PhaseEquipmentParameter[]
+}
+
+model PhaseEquipment {
+  phaseId     Int
+  equipmentId String    @db.VarChar(50)
+  phase       Phase     @relation(fields: [phaseId], references: [id])
+  equipment   Equipment @relation(fields: [equipmentId], references: [id])
+
+  @@id([phaseId, equipmentId])
+}
+
+model PhaseEquipmentParameter {
+  id                       Int                       @id @default(autoincrement())
+  phaseId                  Int
+  equipmentParameterId     Int
+  targetValue              String                    @db.VarChar(255)
+  phaseEquipment           Phase                     @relation(fields: [phaseId], references: [id])
+  equipmentParameter       EquipmentParameter        @relation(fields: [equipmentParameterId], references: [id])
+  batchExecutionParameters BatchExecutionParameter[]
+}
+
+enum GroupType {
+  RECIPE
+  PROCEDURE
+  UNIT_PROCEDURE
+  OPERATION
+}
+
+model Group {
+  id                   String                @id @db.VarChar(50)
+  name                 String                @db.VarChar(255)
+  description          String?               @db.Text
+  type                 GroupType
+  targetExecutionTime  BigInt /* Time in seconds */
+  baseQuantity         Decimal               @db.Decimal(10, 2)
+  uom                  String                @db.VarChar(20)
+  procedureLogic       Json?                 @db.Json
+  isbuildingBlock      Boolean               @default(false)
+  groupPhases          GroupPhase[]
+  childGroups          EmbededGroup[]        @relation("ParentGroup")
+  parentGroups         EmbededGroup[]        @relation("ChildGroup")
+  batchGroupExecutions BatchGroupExecution[]
+}
+
+model GroupPhase {
+  groupId String @db.VarChar(50)
+  phaseId Int
+  group   Group  @relation(fields: [groupId], references: [id])
+  phase   Phase  @relation(fields: [phaseId], references: [id])
+
+  @@id([groupId, phaseId])
+}
+
+model EmbededGroup {
+  parentGroupId String @db.VarChar(50)
+  childGroupId  String @db.VarChar(50)
+  parentGroup   Group  @relation("ParentGroup", fields: [parentGroupId], references: [id])
+  childGroup    Group  @relation("ChildGroup", fields: [childGroupId], references: [id])
+
+  @@id([parentGroupId, childGroupId])
+}
+
+enum BatchStatus {
+  PENDING
+  IN_PROGRESS
+  COMPLETED
+  CANCELED
+  FAILED
+}
+
+model BatchExecution {
+  id                   Int                   @id @default(autoincrement())
+  batchId              String                @db.VarChar(50)
+  startDate            DateTime
+  endDate              DateTime?
+  status               BatchStatus           @default(PENDING)
+  batchPhaseExecutions BatchPhaseExecution[]
+  batchGroupExecutions BatchGroupExecution[]
+}
+
+model BatchPhaseExecution {
+  id                       Int                       @id @default(autoincrement())
+  batchExecutionId         Int
+  phaseId                  Int
+  startDate                DateTime
+  endDate                  DateTime?
+  executionTime            BigInt /* Time in seconds */
+  batchExecution           BatchExecution            @relation(fields: [batchExecutionId], references: [id])
+  phase                    Phase                     @relation(fields: [phaseId], references: [id])
+  batchExecutionMaterials  BatchExecutionMaterial[]
+  batchExecutionParameters BatchExecutionParameter[]
+}
+
+model BatchGroupExecution {
+  id               Int            @id @default(autoincrement())
+  batchExecutionId Int
+  groupId          String         @db.VarChar(50)
+  startDate        DateTime
+  endDate          DateTime?
+  executionTime    BigInt /* Time in seconds */
+  batchExecution   BatchExecution @relation(fields: [batchExecutionId], references: [id])
+  group            Group          @relation(fields: [groupId], references: [id])
+}
+
+model BatchExecutionParameter {
+  id                  Int                     @id @default(autoincrement())
+  executionPhaseId    Int
+  phaseParameterId    Int
+  value               String                  @db.VarChar(255)
+  batchPhaseExecution BatchPhaseExecution     @relation(fields: [executionPhaseId], references: [id])
+  phaseParameter      PhaseEquipmentParameter @relation(fields: [phaseParameterId], references: [id])
+}
+
+model BatchExecutionMaterial {
+  executionPhaseId Int
+  materialId       String              @db.VarChar(50)
+  quantity         Decimal             @db.Decimal(10, 2)
+  uom              String              @db.VarChar(20)
+  batchExecution   BatchPhaseExecution @relation(fields: [executionPhaseId], references: [id])
+  material         Material            @relation(fields: [materialId], references: [id])
+
+  @@id([executionPhaseId, materialId])
+}
