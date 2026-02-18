@@ -64,6 +64,7 @@ model EquipmentParameter {
   description              String?                   @db.Text
   type                     String                    @db.VarChar(50)
   valueDefinition          Json?                     @db.Json
+  uom                      String                    @db.VarChar(20)
   equipment                Equipment                 @relation(fields: [equipmentId], references: [id])
   phaseEquipmentParameters PhaseEquipmentParameter[]
 }
@@ -171,12 +172,13 @@ model BatchGroupExecution {
 }
 
 model BatchExecutionParameter {
-  id                  Int                     @id @default(autoincrement())
   executionPhaseId    Int
   phaseParameterId    Int
   value               String                  @db.VarChar(255)
   batchPhaseExecution BatchPhaseExecution     @relation(fields: [executionPhaseId], references: [id])
   phaseParameter      PhaseEquipmentParameter @relation(fields: [phaseParameterId], references: [id])
+
+  @@id([executionPhaseId, phaseParameterId])
 }
 
 model BatchExecutionMaterial {
