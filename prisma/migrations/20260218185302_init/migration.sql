@@ -88,9 +88,9 @@ CREATE TABLE "Group" (
     "name" VARCHAR(255) NOT NULL,
     "description" TEXT,
     "type" "GroupType" NOT NULL,
-    "targetExecutionTime" BIGINT NOT NULL,
-    "baseQuantity" DECIMAL(10,2) NOT NULL,
-    "uom" VARCHAR(20) NOT NULL,
+    "targetExecutionTime" BIGINT NOT NULL DEFAULT 0,
+    "baseQuantity" DECIMAL(10,2),
+    "uom" VARCHAR(20),
     "procedureLogic" JSON,
     "isbuildingBlock" BOOLEAN NOT NULL DEFAULT false,
 

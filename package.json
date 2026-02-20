@@ -15,6 +15,7 @@
     "@radix-ui/react-select": "^2.2.6",
     "@radix-ui/react-slot": "^1.2.3",
     "@radix-ui/react-tabs": "^1.1.13",
+    "@xyflow/react": "^12.10.1",
     "bun-plugin-tailwind": "^0.1.2",
     "bun-react-template": ".",
     "class-variance-authority": "^0.7.1",
@@ -26,7 +27,8 @@
     "react": "^19",
     "react-dom": "^19",
     "react-router-dom": "^7.13.0",
-    "tailwind-merge": "^3.3.1"
+    "tailwind-merge": "^3.3.1",
+    "vaul": "^1.1.2"
   },
   "devDependencies": {
     "@types/bun": "latest",

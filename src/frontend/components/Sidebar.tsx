@@ -1,5 +1,5 @@
 import { Link, useLocation } from 'react-router-dom';
-import { Package, Box } from 'lucide-react';
+import { Package, Box, FlaskConical } from 'lucide-react';
 import { cn } from '../lib/utils';
 
 interface SidebarProps {
@@ -22,6 +22,11 @@ const navItems: NavItem[] = [
     name: 'Material',
     path: '/app/materials',
     icon: <Box className="w-5 h-5" />,
+  },
+  {
+    name: 'Recipe',
+    path: '/app/recipes',
+    icon: <FlaskConical className="w-5 h-5" />,
   },
 ];
 

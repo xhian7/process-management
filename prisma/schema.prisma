@@ -100,9 +100,9 @@ model Group {
   name                 String                @db.VarChar(255)
   description          String?               @db.Text
   type                 GroupType
-  targetExecutionTime  BigInt /* Time in seconds */
-  baseQuantity         Decimal               @db.Decimal(10, 2)
-  uom                  String                @db.VarChar(20)
+  targetExecutionTime  BigInt                @default(0) /* Time in seconds */
+  baseQuantity         Decimal?              @db.Decimal(10, 2)
+  uom                  String?               @db.VarChar(20)
   procedureLogic       Json?                 @db.Json
   isbuildingBlock      Boolean               @default(false)
   groupPhases          GroupPhase[]

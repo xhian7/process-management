@@ -6,8 +6,9 @@ import { EquipmentList } from "./components/equipment/EquipmentList";
 import { EquipmentForm } from "./components/equipment/EquipmentForm";
 import { EquipmentDetail } from "./components/equipment/EquipmentDetail";
 import { MaterialList } from "./components/materials/MaterialList";
-import { MaterialForm } from "./components/materials/MaterialForm";
-
+import { MaterialForm } from "./components/materials/MaterialForm";import { RecipeList } from './components/recipes/RecipeList';
+import { RecipeForm } from './components/recipes/RecipeForm';
+import { WorkflowEditor } from './components/recipes/workflow/WorkflowEditor';
 export function App() {
   return (
     <ThemeProvider>
@@ -35,7 +36,17 @@ export function App() {
               <Route path="new" element={<MaterialForm />} />
               <Route path=":id/edit" element={<MaterialForm />} />
             </Route>
+
+            {/* Recipe routes */}
+            <Route path="recipes">
+              <Route index element={<RecipeList />} />
+              <Route path="new" element={<RecipeForm />} />
+              <Route path=":id/edit" element={<RecipeForm />} />
+            </Route>
           </Route>
+
+          {/* Workflow editor — full-screen, outside MainLayout */}
+          <Route path="/app/recipes/:id/workflow" element={<WorkflowEditor />} />
         </Routes>
       </BrowserRouter>
     </ThemeProvider>
