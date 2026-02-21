@@ -21,7 +21,7 @@ import {
 import '@xyflow/react/dist/style.css';
 import { Plus } from 'lucide-react';
 import { cn } from '../../../lib/utils';
-import type { HierarchyNode, CanvasLevelState } from './types';
+import type { HierarchyNode, CanvasLevelState, TerminalNodeState, TerminalKind } from './types';
 import { HIERARCHY_LABELS } from './types';
 
 /* ------------------------------------------------------------------ */
@@ -59,7 +59,46 @@ function BlockNode({ data, selected }: { data: BlockData; selected?: boolean }) 
   );
 }
 
-const nodeTypes: NodeTypes = { block: BlockNode };
+const nodeTypes: NodeTypes = { block: BlockNode, terminal: TerminalNode };
+
+/* ------------------------------------------------------------------ */
+/* Terminal node (Begin / End)                                         */
+/* ------------------------------------------------------------------ */
+
+interface TerminalData extends Record<string, unknown> {
+  kind: TerminalKind;
+}
+
+function TerminalNode({ data, selected }: { data: TerminalData; selected?: boolean }) {
+  const isBegin = data.kind === 'begin';
+  return (
+    <div
+      className={cn(
+        'px-5 py-2 rounded-full border-2 shadow-sm text-sm font-semibold text-center min-w-[100px] transition-colors',
+        isBegin
+          ? 'bg-primary text-primary-foreground border-primary'
+          : 'bg-muted text-muted-foreground border-border',
+        selected && 'ring-2 ring-primary/30',
+      )}
+    >
+      {!isBegin && (
+        <Handle
+          type="target"
+          position={Position.Top}
+          className="!w-3 !h-3 !bg-muted-foreground !border-2 !border-background"
+        />
+      )}
+      {isBegin ? 'Begin' : 'End'}
+      {isBegin && (
+        <Handle
+          type="source"
+          position={Position.Bottom}
+          className="!w-3 !h-3 !bg-primary-foreground !border-2 !border-primary"
+        />
+      )}
+    </div>
+  );
+}
 
 /* ------------------------------------------------------------------ */
 /* Helpers                                                             */
@@ -73,15 +112,24 @@ function buildInitialNodes(
   allChildren: HierarchyNode[],
   initialState: CanvasLevelState | undefined,
 ): Node[] {
-  if (!initialState) return [];
-  return allChildren
-    .filter((c) => initialState.placedIds.includes(c.id))
+  const placed = allChildren
+    .filter((c) => initialState?.placedIds.includes(c.id))
     .map((c, idx) => ({
       id: c.id,
       type: 'block',
-      position: initialState.nodePositions[c.id] ?? { x: CENTER_X, y: START_Y + idx * NODE_GAP_Y },
+      position: initialState!.nodePositions[c.id] ?? { x: CENTER_X, y: START_Y + idx * NODE_GAP_Y },
       data: { label: c.name, nodeType: c.type },
     }));
+
+  const terminals: Node[] = (initialState?.terminalNodes ?? []).map((t) => ({
+    id: t.id,
+    type: 'terminal',
+    position: t.position,
+    data: { kind: t.kind },
+    deletable: false,
+  }));
+
+  return [...terminals, ...placed];
 }
 
 function buildInitialEdges(
@@ -113,6 +161,13 @@ export function WorkflowCanvas({ allChildren, initialState, onStateChange }: Wor
     () => initialState?.placedIds ?? [],
   );
 
+  // Terminal node ids (Begin/End) — stable per canvas level
+  const terminalIds = useMemo(
+    () => new Set((initialState?.terminalNodes ?? []).map((t) => t.id)),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [],
+  );
+
   // Unplaced items: children not yet on canvas
   const unplaced = useMemo(
     () => allChildren.filter((c) => !placedIds.includes(c.id)),
@@ -123,14 +178,29 @@ export function WorkflowCanvas({ allChildren, initialState, onStateChange }: Wor
   const emitState = useCallback(
     (currentNodes: Node[], currentEdges: Edge[], currentPlacedIds: string[]) => {
       const nodePositions: Record<string, { x: number; y: number }> = {};
-      for (const n of currentNodes) nodePositions[n.id] = n.position;
+      const updatedTerminalNodes: TerminalNodeState[] = [];
+
+      for (const n of currentNodes) {
+        if (terminalIds.has(n.id)) {
+          // Update terminal node position
+          updatedTerminalNodes.push({
+            id: n.id,
+            kind: (n.data as TerminalData).kind as TerminalKind,
+            position: n.position,
+          });
+        } else {
+          nodePositions[n.id] = n.position;
+        }
+      }
+
       onStateChange({
         placedIds: currentPlacedIds,
         nodePositions,
         edges: currentEdges.map((e) => ({ id: e.id, source: e.source, target: e.target })),
+        terminalNodes: updatedTerminalNodes,
       });
     },
-    [onStateChange],
+    [onStateChange, terminalIds],
   );
 
   const onNodesChange: OnNodesChange = useCallback(
@@ -170,10 +240,12 @@ export function WorkflowCanvas({ allChildren, initialState, onStateChange }: Wor
   const handlePlace = useCallback(
     (child: HierarchyNode) => {
       const newPlacedIds = [...placedIds, child.id];
+      // Position in the middle (between Begin and End)
+      const placedBlockCount = nodes.filter((n) => !terminalIds.has(n.id)).length;
       const newNode: Node = {
         id: child.id,
         type: 'block',
-        position: { x: CENTER_X, y: START_Y + nodes.length * NODE_GAP_Y },
+        position: { x: CENTER_X - 90, y: START_Y + 120 + placedBlockCount * NODE_GAP_Y },
         data: { label: child.name, nodeType: child.type },
       };
       setNodes((nds) => {
@@ -183,7 +255,7 @@ export function WorkflowCanvas({ allChildren, initialState, onStateChange }: Wor
       });
       setPlacedIds(newPlacedIds);
     },
-    [placedIds, nodes.length, edges, emitState, setNodes],
+    [placedIds, nodes, terminalIds, edges, emitState, setNodes],
   );
 
   return (

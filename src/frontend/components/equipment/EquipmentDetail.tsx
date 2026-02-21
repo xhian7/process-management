@@ -1,10 +1,21 @@
 import { useState, useEffect } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import { ArrowLeft, Edit, Trash2, Package, Settings, ChevronDown, ChevronRight } from 'lucide-react';
+import { toast } from 'sonner';
 import { equipmentApi, type Equipment, type InheritedParameterGroup } from '../../services/equipmentApi';
 import { equipmentParameterApi, type EquipmentParameter } from '../../services/equipmentParameterApi';
 import { Button } from '../ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '../ui/card';
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from '../ui/alert-dialog';
 
 // Helper function to render value definition badges
 const renderValueDefinitionBadges = (valueDefinition: any, type: string) => {
@@ -66,6 +77,7 @@ export function EquipmentDetail() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [deleting, setDeleting] = useState(false);
+  const [showDeleteDialog, setShowDeleteDialog] = useState(false);
 
   // Flatten inherited parameters for compatibility
   const inheritedParameters: EquipmentParameter[] = inheritedParameterGroups.flatMap(group =>
@@ -118,17 +130,19 @@ export function EquipmentDetail() {
     });
   };
 
-  const handleDelete = async () => {
-    if (!id || !confirm('Are you sure you want to delete this equipment?')) {
-      return;
-    }
+  const handleDelete = () => {
+    if (!id) return;
+    setShowDeleteDialog(true);
+  };
 
+  const confirmDelete = async () => {
+    if (!id) return;
     try {
       setDeleting(true);
       await equipmentApi.delete(id);
       navigate('/app/equipments');
     } catch (err) {
-      alert(err instanceof Error ? err.message : 'Failed to delete equipment');
+      toast.error(err instanceof Error ? err.message : 'Failed to delete equipment');
       setDeleting(false);
     }
   };
@@ -197,10 +211,10 @@ export function EquipmentDetail() {
                 Edit
               </Button>
               <Button
-                variant="outline"
+                variant="destructive"
                 onClick={handleDelete}
                 disabled={deleting}
-                className="gap-2 text-destructive hover:bg-destructive hover:text-destructive-foreground"
+                className="gap-2"
               >
                 <Trash2 className="w-4 h-4" />
                 Delete
@@ -446,6 +460,26 @@ export function EquipmentDetail() {
           )}
         </div>
       </div>
+
+      <AlertDialog open={showDeleteDialog} onOpenChange={setShowDeleteDialog}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Delete equipment</AlertDialogTitle>
+            <AlertDialogDescription>
+              This action cannot be undone. The equipment and all its parameters will be permanently deleted.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+              onClick={confirmDelete}
+            >
+              Delete
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
 }

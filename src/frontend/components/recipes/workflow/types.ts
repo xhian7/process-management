@@ -35,6 +35,14 @@ export const HIERARCHY_LABELS: Record<HierarchyNodeType, string> = {
 /* Canvas state (per parent level)                                     */
 /* ------------------------------------------------------------------ */
 
+export type TerminalKind = 'begin' | 'end';
+
+export interface TerminalNodeState {
+  id: string;
+  kind: TerminalKind;
+  position: { x: number; y: number };
+}
+
 /**
  * Snapshot of a single canvas level (children of one parent node).
  * Stored in WorkflowEditor keyed by parentId.
@@ -46,6 +54,8 @@ export interface CanvasLevelState {
   nodePositions: Record<string, { x: number; y: number }>;
   /** Edges as drawn by the user. */
   edges: { id: string; source: string; target: string }[];
+  /** Begin and End terminal nodes for this level. */
+  terminalNodes: TerminalNodeState[];
 }
 
 /* ------------------------------------------------------------------ */
@@ -77,6 +87,8 @@ export interface WorkflowEdge {
 export interface ProcedureLogicWorkflow {
   nodes: WorkflowNode[];
   edges: WorkflowEdge[];
+  /** Begin/End terminal nodes per level. Optional for backward compat. */
+  terminalNodes?: TerminalNodeState[];
 }
 
 export interface ProcedureLogic {
@@ -103,6 +115,7 @@ export function treeToWorkflow(
 ): ProcedureLogicWorkflow {
   const nodes: WorkflowNode[] = [];
   const edges: WorkflowEdge[] = [];
+  const terminalNodes: TerminalNodeState[] = [];
 
   function visit(node: HierarchyNode, parentId: string | null, siblingOrder: number) {
     const parentCanvas = parentId !== null ? canvasStateMap[parentId] : null;
@@ -122,13 +135,17 @@ export function treeToWorkflow(
       for (const e of ownCanvas.edges) {
         edges.push({ id: e.id, source: e.source, target: e.target });
       }
+      // Terminal nodes (Begin/End) for this level
+      for (const t of ownCanvas.terminalNodes ?? []) {
+        terminalNodes.push(t);
+      }
     }
 
     node.children.forEach((child, idx) => visit(child, node.id, idx));
   }
 
   visit(root, null, 0);
-  return { nodes, edges };
+  return { nodes, edges, terminalNodes };
 }
 
 /* ------------------------------------------------------------------ */
@@ -169,7 +186,7 @@ export function workflowToCanvasStateMap(
   for (const wn of workflow.nodes) {
     if (wn.parentId === null) continue;
     if (!map[wn.parentId]) {
-      map[wn.parentId] = { placedIds: [], nodePositions: {}, edges: [] };
+      map[wn.parentId] = { placedIds: [], nodePositions: {}, edges: [], terminalNodes: [] };
     }
     const levelState = map[wn.parentId]!;
     if (wn.placed) {
@@ -183,12 +200,35 @@ export function workflowToCanvasStateMap(
     if (wn.parentId !== null) nodeParent.set(wn.id, wn.parentId);
   }
   for (const we of workflow.edges) {
-    const parentId = nodeParent.get(we.source);
+    // Source lookup: works for block→block and block→End edges.
+    // Fails when source is a terminal (Begin→block), so fall back to target.
+    // If both are terminals (Begin→End edge), parse the id convention.
+    let parentId = nodeParent.get(we.source) ?? nodeParent.get(we.target);
+    if (!parentId) {
+      const terminalMatch =
+        we.source.match(/^(.+)__(begin|end)$/) ??
+        we.target.match(/^(.+)__(begin|end)$/);
+      if (terminalMatch) parentId = terminalMatch[1];
+    }
     if (!parentId) continue;
     if (!map[parentId]) {
-      map[parentId] = { placedIds: [], nodePositions: {}, edges: [] };
+      map[parentId] = { placedIds: [], nodePositions: {}, edges: [], terminalNodes: [] };
     }
     map[parentId]!.edges.push({ id: we.id, source: we.source, target: we.target });
+  }
+
+  // Restore terminal nodes — they carry their own parentId via naming convention
+  // id format: `${childId}__begin` or `${childId}__end`
+  // But we stored them with their own kind, so we need to group by parentId.
+  // Terminal nodes are stored at the level they BELONG TO (the child's own canvas).
+  // We identify them by their id suffix and re-attach to the right level.
+  for (const tn of workflow.terminalNodes ?? []) {
+    // Derive parentId: strip __begin or __end suffix
+    const parentId = tn.id.replace(/__begin$|__end$/, '');
+    if (!map[parentId]) {
+      map[parentId] = { placedIds: [], nodePositions: {}, edges: [], terminalNodes: [] };
+    }
+    map[parentId]!.terminalNodes.push(tn);
   }
 
   return map;

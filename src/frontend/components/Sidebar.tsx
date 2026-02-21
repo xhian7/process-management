@@ -1,5 +1,5 @@
 import { Link, useLocation } from 'react-router-dom';
-import { Package, Box, FlaskConical } from 'lucide-react';
+import { Microwave, NotebookTabs, FlaskConical } from 'lucide-react';
 import { cn } from '../lib/utils';
 
 interface SidebarProps {
@@ -16,17 +16,17 @@ const navItems: NavItem[] = [
   {
     name: 'Equipment',
     path: '/app/equipments',
-    icon: <Package className="w-5 h-5" />,
+    icon: <Microwave className="w-5 h-5" />,
   },
   {
     name: 'Material',
     path: '/app/materials',
-    icon: <Box className="w-5 h-5" />,
+    icon: <FlaskConical className="w-5 h-5" />,
   },
   {
     name: 'Recipe',
     path: '/app/recipes',
-    icon: <FlaskConical className="w-5 h-5" />,
+    icon: <NotebookTabs className="w-5 h-5" />,
   },
 ];
 

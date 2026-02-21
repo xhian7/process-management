@@ -1,11 +1,22 @@
 import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Plus, Trash2, Edit, Eye } from 'lucide-react';
+import { toast } from 'sonner';
 import { equipmentApi, type Equipment } from '../../services/equipmentApi';
 import { Button } from '../ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '../ui/card';
 import { Input } from '../ui/input';
 import { Tabs, TabsList, TabsTrigger, TabsContent } from '../ui/tabs';
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from '../ui/alert-dialog';
 
 export function EquipmentList() {
   const navigate = useNavigate();
@@ -15,6 +26,7 @@ export function EquipmentList() {
   const [searchTerm, setSearchTerm] = useState('');
   const [deletingId, setDeletingId] = useState<string | null>(null);
   const [activeTab, setActiveTab] = useState('instances');
+  const [pendingDeleteId, setPendingDeleteId] = useState<string | null>(null);
 
   useEffect(() => {
     loadEquipment();
@@ -33,19 +45,21 @@ export function EquipmentList() {
     }
   };
 
-  const handleDelete = async (id: string) => {
-    if (!confirm('Are you sure you want to delete this equipment?')) {
-      return;
-    }
+  const handleDelete = (id: string) => {
+    setPendingDeleteId(id);
+  };
 
+  const confirmDelete = async () => {
+    if (!pendingDeleteId) return;
     try {
-      setDeletingId(id);
-      await equipmentApi.delete(id);
+      setDeletingId(pendingDeleteId);
+      await equipmentApi.delete(pendingDeleteId);
       await loadEquipment();
     } catch (err) {
-      alert(err instanceof Error ? err.message : 'Failed to delete equipment');
+      toast.error(err instanceof Error ? err.message : 'Failed to delete equipment');
     } finally {
       setDeletingId(null);
+      setPendingDeleteId(null);
     }
   };
 
@@ -139,11 +153,11 @@ export function EquipmentList() {
                     Edit
                   </Button>
                   <Button
-                    variant="outline"
+                    variant="destructive"
                     size="sm"
                     onClick={() => handleDelete(item.id)}
                     disabled={deletingId === item.id}
-                    className="gap-2 text-destructive hover:bg-destructive hover:text-destructive-foreground"
+                    className="gap-2"
                   >
                     <Trash2 className="w-4 h-4" />
                     Delete
@@ -244,6 +258,26 @@ export function EquipmentList() {
           </TabsContent>
         </Tabs>
       </div>
+
+      <AlertDialog open={!!pendingDeleteId} onOpenChange={(open) => !open && setPendingDeleteId(null)}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Delete equipment</AlertDialogTitle>
+            <AlertDialogDescription>
+              This action cannot be undone. The equipment and all its parameters will be permanently deleted.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+              onClick={confirmDelete}
+            >
+              Delete
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
 }

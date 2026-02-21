@@ -1,10 +1,21 @@
 import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Plus, Trash2, Edit } from 'lucide-react';
+import { toast } from 'sonner';
 import { materialApi, type Material } from '../../services/materialApi';
 import { Button } from '../ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '../ui/card';
 import { Input } from '../ui/input';
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from '../ui/alert-dialog';
 
 export function MaterialList() {
   const navigate = useNavigate();
@@ -13,6 +24,7 @@ export function MaterialList() {
   const [error, setError] = useState<string | null>(null);
   const [searchTerm, setSearchTerm] = useState('');
   const [deletingId, setDeletingId] = useState<string | null>(null);
+  const [pendingDeleteId, setPendingDeleteId] = useState<string | null>(null);
 
   useEffect(() => {
     loadMaterials();
@@ -31,19 +43,21 @@ export function MaterialList() {
     }
   };
 
-  const handleDelete = async (id: string) => {
-    if (!confirm('Are you sure you want to delete this material?')) {
-      return;
-    }
+  const handleDelete = (id: string) => {
+    setPendingDeleteId(id);
+  };
 
+  const confirmDelete = async () => {
+    if (!pendingDeleteId) return;
     try {
-      setDeletingId(id);
-      await materialApi.delete(id);
+      setDeletingId(pendingDeleteId);
+      await materialApi.delete(pendingDeleteId);
       await loadMaterials();
     } catch (err) {
-      alert(err instanceof Error ? err.message : 'Failed to delete material');
+      toast.error(err instanceof Error ? err.message : 'Failed to delete material');
     } finally {
       setDeletingId(null);
+      setPendingDeleteId(null);
     }
   };
 
@@ -165,11 +179,11 @@ export function MaterialList() {
                         Edit
                       </Button>
                       <Button
-                        variant="outline"
+                        variant="destructive"
                         size="sm"
                         onClick={() => handleDelete(material.id)}
                         disabled={deletingId === material.id}
-                        className="gap-2 text-destructive hover:bg-destructive hover:text-destructive-foreground"
+                        className="gap-2"
                       >
                         <Trash2 className="w-4 h-4" />
                         Delete
@@ -182,6 +196,25 @@ export function MaterialList() {
           </div>
         )}
       </div>
+      <AlertDialog open={!!pendingDeleteId} onOpenChange={(open) => !open && setPendingDeleteId(null)}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Delete material</AlertDialogTitle>
+            <AlertDialogDescription>
+              This action cannot be undone. The material will be permanently deleted.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+              onClick={confirmDelete}
+            >
+              Delete
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
 }

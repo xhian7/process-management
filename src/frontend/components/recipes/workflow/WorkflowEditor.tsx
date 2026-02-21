@@ -41,6 +41,30 @@ function generateId(prefix: string) {
   return `${prefix}-${Date.now()}-${counter}`;
 }
 
+/**
+ * Ensures the root node's canvas level always has Begin and End terminal
+ * nodes. Safe to call on restored maps (only adds if missing).
+ */
+function ensureRootTerminals(
+  csm: Record<string, CanvasLevelState>,
+  rootId: string,
+): Record<string, CanvasLevelState> {
+  const existing = csm[rootId];
+  if (existing?.terminalNodes?.length) return csm; // already present
+  return {
+    ...csm,
+    [rootId]: {
+      placedIds: existing?.placedIds ?? [],
+      nodePositions: existing?.nodePositions ?? {},
+      edges: existing?.edges ?? [],
+      terminalNodes: [
+        { id: `${rootId}__begin`, kind: 'begin', position: { x: 210, y: 40 } },
+        { id: `${rootId}__end`,   kind: 'end',   position: { x: 210, y: 400 } },
+      ],
+    },
+  };
+}
+
 /* ------------------------------------------------------------------ */
 /* WorkflowEditor                                                      */
 /* ------------------------------------------------------------------ */
@@ -90,7 +114,8 @@ export function WorkflowEditor() {
             children: [],
           };
           // Restore canvas state map
-          setCanvasStateMap(workflowToCanvasStateMap(recipe.procedureLogic.workflow));
+          const csm = workflowToCanvasStateMap(recipe.procedureLogic.workflow);
+          setCanvasStateMap(ensureRootTerminals(csm, root.id));
         } else {
           root = {
             id: recipe.id,
@@ -98,14 +123,17 @@ export function WorkflowEditor() {
             type: 'RECIPE',
             children: [],
           };
+          // Fresh recipe: initialize root canvas with Begin/End
+          setCanvasStateMap(ensureRootTerminals({}, recipe.id));
         }
 
         setTree(root);
         setSelectedId(root.id);
         // Capture initial snapshot for dirty detection
-        const initialCSM = recipe.procedureLogic?.workflow && recipe.procedureLogic.workflow.nodes.length > 0
+        const rawCSM = recipe.procedureLogic?.workflow && recipe.procedureLogic.workflow.nodes.length > 0
           ? workflowToCanvasStateMap(recipe.procedureLogic.workflow)
           : {};
+        const initialCSM = ensureRootTerminals(rawCSM, recipe.id);
         setSavedSnapshot(JSON.stringify({ tree: root, canvasStateMap: initialCSM }));
       } catch (err) {
         setError(err instanceof Error ? err.message : 'Failed to load recipe');
@@ -150,8 +178,10 @@ export function WorkflowEditor() {
     if (!tree || !selectedNode || !childType) return;
     if (!newElementId.trim() || !newElementName.trim()) return;
 
+    const childId = newElementId.trim();
+
     const newChild: HierarchyNode = {
-      id: newElementId.trim(),
+      id: childId,
       name: newElementName.trim(),
       type: childType,
       children: [],
@@ -160,6 +190,21 @@ export function WorkflowEditor() {
     // Deep-clone tree and insert child
     const updatedTree = cloneAndInsert(tree, selectedId, newChild);
     setTree(updatedTree);
+
+    // Automatically place Begin and End terminal nodes on the new child's canvas
+    setCanvasStateMap((prev) => ({
+      ...prev,
+      [childId]: {
+        placedIds: [],
+        nodePositions: {},
+        edges: [],
+        terminalNodes: [
+          { id: `${childId}__begin`, kind: 'begin', position: { x: 210, y: 40 } },
+          { id: `${childId}__end`,   kind: 'end',   position: { x: 210, y: 400 } },
+        ],
+      },
+    }));
+
     setIsAdding(false);
     setNewElementId('');
     setNewElementName('');

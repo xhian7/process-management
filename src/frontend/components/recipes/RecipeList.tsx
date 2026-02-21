@@ -1,10 +1,21 @@
 import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Plus, Trash2, Edit, FlaskConical } from 'lucide-react';
+import { toast } from 'sonner';
 import { recipeApi, type Recipe } from '../../services/recipeApi';
 import { Button } from '../ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '../ui/card';
 import { Input } from '../ui/input';
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from '../ui/alert-dialog';
 
 export function RecipeList() {
   const navigate = useNavigate();
@@ -13,6 +24,7 @@ export function RecipeList() {
   const [error, setError] = useState<string | null>(null);
   const [searchTerm, setSearchTerm] = useState('');
   const [deletingId, setDeletingId] = useState<string | null>(null);
+  const [pendingDeleteId, setPendingDeleteId] = useState<string | null>(null);
 
   useEffect(() => {
     loadRecipes();
@@ -31,19 +43,21 @@ export function RecipeList() {
     }
   };
 
-  const handleDelete = async (id: string) => {
-    if (!confirm('Are you sure you want to delete this recipe?')) {
-      return;
-    }
+  const handleDelete = (id: string) => {
+    setPendingDeleteId(id);
+  };
 
+  const confirmDelete = async () => {
+    if (!pendingDeleteId) return;
     try {
-      setDeletingId(id);
-      await recipeApi.delete(id);
+      setDeletingId(pendingDeleteId);
+      await recipeApi.delete(pendingDeleteId);
       await loadRecipes();
     } catch (err) {
-      alert(err instanceof Error ? err.message : 'Failed to delete recipe');
+      toast.error(err instanceof Error ? err.message : 'Failed to delete recipe');
     } finally {
       setDeletingId(null);
+      setPendingDeleteId(null);
     }
   };
 
@@ -167,11 +181,11 @@ export function RecipeList() {
                         Edit
                       </Button>
                       <Button
-                        variant="outline"
+                        variant="destructive"
                         size="sm"
                         onClick={() => handleDelete(recipe.id)}
                         disabled={deletingId === recipe.id}
-                        className="gap-2 text-destructive hover:bg-destructive hover:text-destructive-foreground"
+                        className="gap-2"
                       >
                         <Trash2 className="w-4 h-4" />
                         Delete
@@ -184,6 +198,25 @@ export function RecipeList() {
           </div>
         )}
       </div>
+      <AlertDialog open={!!pendingDeleteId} onOpenChange={(open) => !open && setPendingDeleteId(null)}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Delete recipe</AlertDialogTitle>
+            <AlertDialogDescription>
+              This action cannot be undone. The recipe and all its workflow data will be permanently deleted.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+              onClick={confirmDelete}
+            >
+              Delete
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
 }

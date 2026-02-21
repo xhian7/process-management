@@ -10,6 +10,16 @@ import { Label } from '../ui/label';
 import { Textarea } from '../ui/textarea';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '../ui/select';
 import { ParameterForm } from './ParameterForm';
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from '../ui/alert-dialog';
 
 // Helper function to render value definition badges
 const renderValueDefinitionBadges = (valueDefinition: any, type: string) => {
@@ -97,6 +107,9 @@ export function EquipmentForm() {
   const [loadingData, setLoadingData] = useState(isEditing);
   const [loadingClasses, setLoadingClasses] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  // Dialog state
+  const [pendingDeleteParamId, setPendingDeleteParamId] = useState<number | string | null>(null);
+  const [showUnsavedDialog, setShowUnsavedDialog] = useState(false);
 
   // Flatten inherited parameters for compatibility
   const inheritedParameters: LocalParameter[] = inheritedParameterGroups.flatMap(group =>
@@ -340,17 +353,18 @@ export function EquipmentForm() {
   };
 
   const handleDeleteParameter = (parameterId: number | string) => {
-    if (!confirm('Are you sure you want to delete this parameter?')) {
-      return;
-    }
+    setPendingDeleteParamId(parameterId);
+  };
 
+  const confirmDeleteParameter = () => {
+    if (pendingDeleteParamId === null) return;
+    const parameterId = pendingDeleteParamId;
+    setPendingDeleteParamId(null);
     if (typeof parameterId === 'number') {
-      // Mark existing parameter for deletion
       setParameters(prev =>
         prev.map(p => p.id === parameterId ? { ...p, _deleted: true } : p)
       );
     } else {
-      // Remove new parameter completely
       setParameters(prev => prev.filter(p => p.tempId !== parameterId));
     }
   };
@@ -401,9 +415,8 @@ export function EquipmentForm() {
 
   const handleBack = () => {
     if (hasChanges() && isEditing) {
-      if (!confirm('You have unsaved changes. Are you sure you want to leave?')) {
-        return;
-      }
+      setShowUnsavedDialog(true);
+      return;
     }
     navigate('/app/equipments');
   };
@@ -761,11 +774,11 @@ export function EquipmentForm() {
                                   Edit
                                 </Button>
                                 <Button
-                                  variant="outline"
+                                  variant="destructive"
                                   size="sm"
                                   onClick={() => handleDeleteParameter(paramId)}
                                   disabled={showParameterForm || loading}
-                                  className="gap-1 text-destructive hover:bg-destructive hover:text-destructive-foreground"
+                                  className="gap-1"
                                 >
                                   <Trash2 className="w-3 h-3" />
                                   Delete
@@ -784,6 +797,48 @@ export function EquipmentForm() {
         </Card>
         </div>
       </div>
+
+      {/* Delete parameter confirmation */}
+      <AlertDialog open={pendingDeleteParamId !== null} onOpenChange={(open) => !open && setPendingDeleteParamId(null)}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Delete parameter</AlertDialogTitle>
+            <AlertDialogDescription>
+              This action cannot be undone. The parameter will be permanently removed.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+              onClick={confirmDeleteParameter}
+            >
+              Delete
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
+      {/* Unsaved changes confirmation */}
+      <AlertDialog open={showUnsavedDialog} onOpenChange={setShowUnsavedDialog}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Unsaved changes</AlertDialogTitle>
+            <AlertDialogDescription>
+              You have unsaved changes. If you leave now, your changes will be lost.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Keep editing</AlertDialogCancel>
+            <AlertDialogAction
+              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+              onClick={() => navigate('/app/equipments')}
+            >
+              Leave without saving
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
 }
