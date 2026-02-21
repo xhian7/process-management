@@ -32,23 +32,42 @@ export const HIERARCHY_LABELS: Record<HierarchyNodeType, string> = {
 };
 
 /* ------------------------------------------------------------------ */
+/* Canvas state (per parent level)                                     */
+/* ------------------------------------------------------------------ */
+
+/**
+ * Snapshot of a single canvas level (children of one parent node).
+ * Stored in WorkflowEditor keyed by parentId.
+ */
+export interface CanvasLevelState {
+  /** XYFlow node ids that the user has dragged onto the canvas. */
+  placedIds: string[];
+  /** Actual positions of placed nodes as edited by the user. */
+  nodePositions: Record<string, { x: number; y: number }>;
+  /** Edges as drawn by the user. */
+  edges: { id: string; source: string; target: string }[];
+}
+
+/* ------------------------------------------------------------------ */
 /* procedureLogic persistence types                                    */
 /* ------------------------------------------------------------------ */
 
-/** Flat representation of a single node in the XYFlow graph. */
+/** Flat representation of a single node stored in the DB. */
 export interface WorkflowNode {
   id: string;
   name: string;
   type: HierarchyNodeType;
   /** Id of the parent node; null for the recipe root. */
   parentId: string | null;
-  /** Zero-based order among siblings — defines the vertical sequence. */
+  /** Zero-based order among siblings. */
   order: number;
-  /** Pre-computed XYFlow position (vertical layout). */
+  /** Last-known XYFlow position. */
   position: { x: number; y: number };
+  /** Whether the node has been placed on the canvas by the user. */
+  placed: boolean;
 }
 
-/** Edge between two consecutive siblings in the XYFlow graph. */
+/** Edge stored in the DB. */
 export interface WorkflowEdge {
   id: string;
   source: string;
@@ -70,33 +89,39 @@ const NODE_GAP_Y = 120;
 const START_Y = 40;
 const CENTER_X = 300;
 
+/* ------------------------------------------------------------------ */
+/* Serialisation: tree + canvas state → ProcedureLogicWorkflow        */
+/* ------------------------------------------------------------------ */
+
 /**
- * Flatten the HierarchyNode tree into a ProcedureLogicWorkflow ready to
- * be persisted in the `procedureLogic` JSON column.
+ * Flatten the HierarchyNode tree into a ProcedureLogicWorkflow.
+ * `canvasStateMap` holds the actual positions/edges/placedIds keyed by parentId.
  */
-export function treeToWorkflow(root: HierarchyNode): ProcedureLogicWorkflow {
+export function treeToWorkflow(
+  root: HierarchyNode,
+  canvasStateMap: Record<string, CanvasLevelState> = {},
+): ProcedureLogicWorkflow {
   const nodes: WorkflowNode[] = [];
   const edges: WorkflowEdge[] = [];
 
-  function visit(node: HierarchyNode, parentId: string | null, order: number) {
-    nodes.push({
-      id: node.id,
-      name: node.name,
-      type: node.type,
-      parentId,
-      order,
-      position: { x: CENTER_X, y: START_Y + order * NODE_GAP_Y },
-    });
+  function visit(node: HierarchyNode, parentId: string | null, siblingOrder: number) {
+    const parentCanvas = parentId !== null ? canvasStateMap[parentId] : null;
+    const placed =
+      parentId === null || (parentCanvas?.placedIds.includes(node.id) ?? false);
+    const position =
+      parentCanvas?.nodePositions[node.id] ?? {
+        x: CENTER_X,
+        y: START_Y + siblingOrder * NODE_GAP_Y,
+      };
 
-    // Edges: connect consecutive siblings
-    for (let i = 0; i < node.children.length - 1; i++) {
-      const source = node.children[i]!;
-      const target = node.children[i + 1]!;
-      edges.push({
-        id: `e-${source.id}-${target.id}`,
-        source: source.id,
-        target: target.id,
-      });
+    nodes.push({ id: node.id, name: node.name, type: node.type, parentId, order: siblingOrder, position, placed });
+
+    // Edges at this level come from this node's own canvas state
+    const ownCanvas = canvasStateMap[node.id];
+    if (ownCanvas) {
+      for (const e of ownCanvas.edges) {
+        edges.push({ id: e.id, source: e.source, target: e.target });
+      }
     }
 
     node.children.forEach((child, idx) => visit(child, node.id, idx));
@@ -106,10 +131,11 @@ export function treeToWorkflow(root: HierarchyNode): ProcedureLogicWorkflow {
   return { nodes, edges };
 }
 
-/**
- * Rebuild the HierarchyNode tree from a persisted ProcedureLogicWorkflow.
- * The root is identified by id matching `rootId`.
- */
+/* ------------------------------------------------------------------ */
+/* Deserialisation: ProcedureLogicWorkflow → tree + canvas state      */
+/* ------------------------------------------------------------------ */
+
+/** Rebuild the HierarchyNode tree from a persisted ProcedureLogicWorkflow. */
 export function workflowToTree(
   workflow: ProcedureLogicWorkflow,
   rootId: string,
@@ -129,6 +155,43 @@ export function workflowToTree(
   }
 
   return buildNode(rootFlat);
+}
+
+/**
+ * Rebuild the CanvasLevelState map from a persisted ProcedureLogicWorkflow.
+ * Keyed by parent node id.
+ */
+export function workflowToCanvasStateMap(
+  workflow: ProcedureLogicWorkflow,
+): Record<string, CanvasLevelState> {
+  const map: Record<string, CanvasLevelState> = {};
+
+  for (const wn of workflow.nodes) {
+    if (wn.parentId === null) continue;
+    if (!map[wn.parentId]) {
+      map[wn.parentId] = { placedIds: [], nodePositions: {}, edges: [] };
+    }
+    const levelState = map[wn.parentId]!;
+    if (wn.placed) {
+      levelState.placedIds.push(wn.id);
+      levelState.nodePositions[wn.id] = wn.position;
+    }
+  }
+
+  const nodeParent = new Map<string, string>();
+  for (const wn of workflow.nodes) {
+    if (wn.parentId !== null) nodeParent.set(wn.id, wn.parentId);
+  }
+  for (const we of workflow.edges) {
+    const parentId = nodeParent.get(we.source);
+    if (!parentId) continue;
+    if (!map[parentId]) {
+      map[parentId] = { placedIds: [], nodePositions: {}, edges: [] };
+    }
+    map[parentId]!.edges.push({ id: we.id, source: we.source, target: we.target });
+  }
+
+  return map;
 }
 
 /* ------------------------------------------------------------------ */

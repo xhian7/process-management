@@ -1,6 +1,7 @@
 import "./index.css";
 import { BrowserRouter, Routes, Route, Navigate } from "react-router-dom";
 import { ThemeProvider } from "./contexts/ThemeContext";
+import { Toaster } from "./components/ui/sonner";
 import { MainLayout } from "./components/MainLayout";
 import { EquipmentList } from "./components/equipment/EquipmentList";
 import { EquipmentForm } from "./components/equipment/EquipmentForm";
@@ -12,6 +13,7 @@ import { WorkflowEditor } from './components/recipes/workflow/WorkflowEditor';
 export function App() {
   return (
     <ThemeProvider>
+      <Toaster richColors position="top-right" />
       <BrowserRouter>
         <Routes>
           {/* Redirect root to app */}

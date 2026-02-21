@@ -1,22 +1,34 @@
-import { useState, useCallback, useEffect } from 'react';
+import { useState, useCallback, useEffect, useMemo } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
-import { ArrowLeft, Plus, Save, ChevronRight } from 'lucide-react';
+import { LogOut, Plus, Save, ChevronRight } from 'lucide-react';
+import { toast } from 'sonner';
 import { Button } from '../../ui/button';
 import { Input } from '../../ui/input';
 import { Label } from '../../ui/label';
-import { Card, CardContent, CardHeader, CardTitle } from '../../ui/card';
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from '../../ui/alert-dialog';
 import { HierarchyTree } from './HierarchyTree';
 import { WorkflowCanvas } from './WorkflowCanvas';
 import {
   type HierarchyNode,
   type HierarchyNodeType,
   type ProcedureLogic,
+  type CanvasLevelState,
   ISA88_CHILD_TYPE,
   HIERARCHY_LABELS,
   findNode,
   buildPath,
   treeToWorkflow,
   workflowToTree,
+  workflowToCanvasStateMap,
 } from './types';
 import { recipeApi } from '../../../services/recipeApi';
 
@@ -43,6 +55,12 @@ export function WorkflowEditor() {
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  // Canvas state per parent node id
+  const [canvasStateMap, setCanvasStateMap] = useState<Record<string, CanvasLevelState>>({});
+  // Snapshot of last saved state for dirty tracking
+  const [savedSnapshot, setSavedSnapshot] = useState<string>('');
+  // Controls the "unsaved changes" exit dialog
+  const [showExitDialog, setShowExitDialog] = useState(false);
 
   // Add-element form
   const [isAdding, setIsAdding] = useState(false);
@@ -71,6 +89,8 @@ export function WorkflowEditor() {
             type: 'RECIPE',
             children: [],
           };
+          // Restore canvas state map
+          setCanvasStateMap(workflowToCanvasStateMap(recipe.procedureLogic.workflow));
         } else {
           root = {
             id: recipe.id,
@@ -82,6 +102,11 @@ export function WorkflowEditor() {
 
         setTree(root);
         setSelectedId(root.id);
+        // Capture initial snapshot for dirty detection
+        const initialCSM = recipe.procedureLogic?.workflow && recipe.procedureLogic.workflow.nodes.length > 0
+          ? workflowToCanvasStateMap(recipe.procedureLogic.workflow)
+          : {};
+        setSavedSnapshot(JSON.stringify({ tree: root, canvasStateMap: initialCSM }));
       } catch (err) {
         setError(err instanceof Error ? err.message : 'Failed to load recipe');
       } finally {
@@ -96,11 +121,23 @@ export function WorkflowEditor() {
   const childType = selectedNode ? ISA88_CHILD_TYPE[selectedNode.type] : null;
   const canAddChild = childType !== null;
 
+  const isDirty = useMemo(() => {
+    if (!tree || !savedSnapshot) return false;
+    return JSON.stringify({ tree, canvasStateMap }) !== savedSnapshot;
+  }, [tree, canvasStateMap, savedSnapshot]);
+
   // --------------- handlers ---------------
   const handleSelect = useCallback((id: string) => {
     setSelectedId(id);
     setIsAdding(false);
   }, []);
+
+  const handleCanvasStateChange = useCallback(
+    (parentId: string, state: CanvasLevelState) => {
+      setCanvasStateMap((prev) => ({ ...prev, [parentId]: state }));
+    },
+    [],
+  );
 
   const handleStartAdd = () => {
     if (!canAddChild || !childType) return;
@@ -133,20 +170,28 @@ export function WorkflowEditor() {
   };
 
   const handleSave = async () => {
-    if (!tree) return;
+    if (!tree || !isDirty) return;
     try {
       setSaving(true);
-
       const procedureLogic: ProcedureLogic = {
-        workflow: treeToWorkflow(tree),
+        workflow: treeToWorkflow(tree, canvasStateMap),
         externalElements: [],
       };
-
       await recipeApi.update(tree.id, { procedureLogic });
+      setSavedSnapshot(JSON.stringify({ tree, canvasStateMap }));
+      toast.success('Workflow saved successfully');
     } catch (err) {
-      alert(err instanceof Error ? err.message : 'Failed to save workflow');
+      toast.error(err instanceof Error ? err.message : 'Failed to save workflow');
     } finally {
       setSaving(false);
+    }
+  };
+
+  const handleExit = () => {
+    if (isDirty) {
+      setShowExitDialog(true);
+    } else {
+      navigate(`/app/recipes/${recipeId}/edit`);
     }
   };
 
@@ -212,24 +257,29 @@ export function WorkflowEditor() {
 
           {/* Right: actions */}
           <div className="flex items-center gap-2">
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={() => navigate(`/app/recipes/${recipeId}/edit`)}
-              className="gap-1.5"
-            >
-              <ArrowLeft className="w-4 h-4" />
-              Back
-            </Button>
             {canAddChild && (
               <Button size="sm" onClick={handleStartAdd} className="gap-1.5">
                 <Plus className="w-4 h-4" />
                 Add {HIERARCHY_LABELS[childType!]}
               </Button>
             )}
-            <Button size="sm" onClick={handleSave} disabled={saving} className="gap-1.5">
+            <Button
+              size="sm"
+              onClick={handleSave}
+              disabled={saving || !isDirty}
+              className="gap-1.5"
+            >
               <Save className="w-4 h-4" />
               {saving ? 'Saving...' : 'Save'}
+            </Button>
+            <Button
+              variant="destructive"
+              size="sm"
+              onClick={handleExit}
+              className="gap-1.5"
+            >
+              <LogOut className="w-4 h-4" />
+              Exit
             </Button>
           </div>
         </div>
@@ -272,6 +322,27 @@ export function WorkflowEditor() {
         )}
       </header>
 
+      {/* ============== EXIT CONFIRMATION DIALOG ============== */}
+      <AlertDialog open={showExitDialog} onOpenChange={setShowExitDialog}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Unsaved changes</AlertDialogTitle>
+            <AlertDialogDescription>
+              You have unsaved changes in the workflow. If you exit now, your changes will be lost.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Keep editing</AlertDialogCancel>
+            <AlertDialogAction
+              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+              onClick={() => navigate(`/app/recipes/${recipeId}/edit`)}
+            >
+              Exit without saving
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
       {/* ============== BODY (tree + canvas) ============== */}
       <div className="flex-1 flex overflow-hidden">
         {/* Left: hierarchy tree */}
@@ -284,9 +355,14 @@ export function WorkflowEditor() {
           <HierarchyTree root={tree} selectedId={selectedId} onSelect={handleSelect} />
         </aside>
 
-        {/* Right: canvas */}
+        {/* Right: canvas — keyed by selectedId so it resets when level changes */}
         <div className="flex-1 overflow-hidden">
-          <WorkflowCanvas children={selectedNode?.children ?? []} />
+          <WorkflowCanvas
+            key={selectedId}
+            allChildren={selectedNode?.children ?? []}
+            initialState={canvasStateMap[selectedId]}
+            onStateChange={(state) => handleCanvasStateChange(selectedId, state)}
+          />
         </div>
       </div>
     </div>
