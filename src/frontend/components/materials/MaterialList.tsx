@@ -99,7 +99,7 @@ export function MaterialList() {
         <div className="px-8 py-6">
           <div className="flex items-center justify-between mb-4">
             <div>
-              <h1 className="text-3xl font-semibold text-foreground">Material</h1>
+              <h1 className="text-3xl font-semibold text-foreground">Materials</h1>
               <p className="text-muted-foreground mt-1">
                 Manage materials used in your processes
               </p>

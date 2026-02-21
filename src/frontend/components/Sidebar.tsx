@@ -19,12 +19,12 @@ const navItems: NavItem[] = [
     icon: <Microwave className="w-5 h-5" />,
   },
   {
-    name: 'Material',
+    name: 'Materials',
     path: '/app/materials',
     icon: <FlaskConical className="w-5 h-5" />,
   },
   {
-    name: 'Recipe',
+    name: 'Recipes',
     path: '/app/recipes',
     icon: <NotebookTabs className="w-5 h-5" />,
   },

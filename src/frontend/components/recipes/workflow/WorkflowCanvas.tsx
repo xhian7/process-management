@@ -205,35 +205,29 @@ export function WorkflowCanvas({ allChildren, initialState, onStateChange }: Wor
 
   const onNodesChange: OnNodesChange = useCallback(
     (changes) => {
-      setNodes((nds) => {
-        const next = applyNodeChanges(changes, nds);
-        emitState(next, edges, placedIds);
-        return next;
-      });
+      const next = applyNodeChanges(changes, nodes);
+      setNodes(next);
+      emitState(next, edges, placedIds);
     },
-    [edges, placedIds, emitState, setNodes],
+    [nodes, edges, placedIds, emitState, setNodes],
   );
 
   const onEdgesChange: OnEdgesChange = useCallback(
     (changes) => {
-      setEdges((eds) => {
-        const next = applyEdgeChanges(changes, eds);
-        emitState(nodes, next, placedIds);
-        return next;
-      });
+      const next = applyEdgeChanges(changes, edges);
+      setEdges(next);
+      emitState(nodes, next, placedIds);
     },
-    [nodes, placedIds, emitState, setEdges],
+    [nodes, edges, placedIds, emitState, setEdges],
   );
 
   const onConnect: OnConnect = useCallback(
     (connection) => {
-      setEdges((eds) => {
-        const next = addEdge({ ...connection, type: 'smoothstep' }, eds);
-        emitState(nodes, next, placedIds);
-        return next;
-      });
+      const next = addEdge({ ...connection, type: 'smoothstep' }, edges);
+      setEdges(next);
+      emitState(nodes, next, placedIds);
     },
-    [nodes, placedIds, emitState, setEdges],
+    [nodes, edges, placedIds, emitState, setEdges],
   );
 
   // Place an element from the panel onto the canvas
@@ -248,12 +242,10 @@ export function WorkflowCanvas({ allChildren, initialState, onStateChange }: Wor
         position: { x: CENTER_X - 90, y: START_Y + 120 + placedBlockCount * NODE_GAP_Y },
         data: { label: child.name, nodeType: child.type },
       };
-      setNodes((nds) => {
-        const next = [...nds, newNode];
-        emitState(next, edges, newPlacedIds);
-        return next;
-      });
+      const next = [...nodes, newNode];
+      setNodes(next);
       setPlacedIds(newPlacedIds);
+      emitState(next, edges, newPlacedIds);
     },
     [placedIds, nodes, terminalIds, edges, emitState, setNodes],
   );
